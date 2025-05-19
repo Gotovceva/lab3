@@ -1,107 +1,60 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import random as rnd
+import numpy as np
 from matplotlib.widgets import Slider
-from typing import List, Tuple
 
-def generate_data(
-    func, x_min: float = 1, x_max: float = 10, points: int = 50, noise_scale: float = 3
-) -> Tuple[np.ndarray, np.ndarray]:
-    x = np.linspace(x_min, x_max, points)
-    y = func(x) + np.random.uniform(-noise_scale, noise_scale, size=len(x))
-    return x, y
+# Константы
+N = 15  # Количество базовых точек
+ALPHA = 0.0001  # Скорость обучения
+NOISE_RANGE = 6  # Разброс шума
 
-def get_da(x: np.ndarray, y: np.ndarray, a: float, b: float, c: float) -> float:
-    return -2 * np.sum((y - (a * x**b + c)) * x**b)
+# Генерация данных
+x = np.linspace(1, N, N*2)  # Начинаем с 1, чтобы избежать log(0)
+y_real = 2 * (x ** 2) + 5  # Исходная функция y = 2x² + 5
+y = y_real + np.random.uniform(-NOISE_RANGE, NOISE_RANGE, len(x))  # Зашумленные данные
 
-def get_db(x: np.ndarray, y: np.ndarray, a: float, b: float, c: float) -> float:
-    return -2 * np.sum((y - (a * x**b + c)) * a * x**b * np.log(x))
+# Создание фигуры
+fig, ax = plt.subplots(figsize=(10, 6))
+plt.subplots_adjust(bottom=0.25)
+ax.plot(x, y_real, 'g-', label='Исходная функция')
+scatter = ax.scatter(x, y, c='b', label='Зашумленные данные')
+line, = ax.plot(x, y_real, 'r-', label='Аппроксимация')
+ax.legend()
+ax.grid(True)
 
-def get_dc(x: np.ndarray, y: np.ndarray, a: float, b: float, c: float) -> float:
-    return -2 * np.sum(y - (a * x**b + c))
-
-def fit(
-    x: np.ndarray,
-    y: np.ndarray,
-    a0: float = 1.0,
-    b0: float = 1.0,
-    c0: float = 0.0,
-    speed: float = 0.0001,
-    epochs: int = 1000,
-) -> Tuple[List[float], List[float], List[float]]:
-    a, b, c = a0, b0, c0
-    a_list, b_list, c_list = [a], [b], [c]
+# Функция градиентного спуска
+def gradient_descent(x, y, a_start, b_start, c_start, alpha, iterations):
+    a, b, c = a_start, b_start, c_start
+    n = len(x)
     
-    for _ in range(epochs):
-        da = get_da(x, y, a, b, c)
-        db = get_db(x, y, a, b, c)
-        dc = get_dc(x, y, a, b, c)
+    for _ in range(iterations):
+        # Предсказание
+        y_pred = a * (x ** b) + c
         
-        a -= speed * da
-        b -= speed * db
-        c -= speed * dc
+        # Градиенты
+        grad_a = (2/n) * np.sum((y_pred - y) * (x ** b))
+        grad_b = (2/n) * np.sum((y_pred - y) * a * (x ** b) * np.log(x))
+        grad_c = (2/n) * np.sum(y_pred - y)
         
-        a_list.append(a)
-        b_list.append(b)
-        c_list.append(c)
-    
-    return a_list, b_list, c_list
+        # Обновление параметров
+        a -= alpha * grad_a
+        b -= alpha * grad_b * 0.01  # Меньший шаг для b
+        c -= alpha * grad_c
+        
+    return a * (x ** b) + c
 
-def plot_with_slider(
-    x: np.ndarray,
-    y: np.ndarray,
-    a_list: List[float],
-    b_list: List[float],
-    c_list: List[float],
-    x_min: float,
-    x_max: float,
-):
-    fig, ax = plt.subplots(figsize=(10, 7))
-    plt.subplots_adjust(bottom=0.25)
-    
-    scatter = ax.scatter(x, y, color='red', label='Исходные данные')
-    
-    x_plot = np.linspace(x_min, x_max, 100)
-    line, = ax.plot(x_plot, a_list[0] * x_plot**b_list[0] + c_list[0], 'b-', label='Регрессия')
-    
-    ax_slider = plt.axes([0.2, 0.1, 0.6, 0.03])
-    slider = Slider(
-        ax=ax_slider,
-        label='Итерация',
-        valmin=0,
-        valmax=len(a_list) - 1,
-        valinit=0,
-        valstep=1,
-    )
-    
-    def update(val):
-        epoch = int(slider.val)
-        a = a_list[epoch]
-        b = b_list[epoch]
-        c = c_list[epoch]
-        line.set_ydata(a * x_plot**b + c)
-        ax.set_title(f'Степенная регрессия: y = {a:.2f}*x^{b:.2f} + {c:.2f} (Итерация {epoch})')
-        fig.canvas.draw_idle()
-    
-    slider.on_changed(update)
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.legend()
-    ax.grid(True)
-    plt.show()
+# Слайдер
+ax_iter = plt.axes([0.25, 0.1, 0.65, 0.03])
+iter_slider = Slider(ax_iter, 'Итерации', 0, 1000, valinit=0, valstep=1)
 
-def main():
-    true_a, true_b, true_c = 2.5, 1.3, 3.0
-    power_func = lambda x: true_a * x**true_b + true_c
-    
-    x, y = generate_data(power_func, x_min=1, x_max=10, points=50, noise_scale=2)
-    
-    a_list, b_list, c_list = fit(x, y, a0=1.0, b0=0.5, c0=0.0, speed=0.000001, epochs=500)
-    
-    print(f"Истинные параметры: a={true_a}, b={true_b}, c={true_c}")
-    print(f"Найденные параметры: a={a_list[-1]:.2f}, b={b_list[-1]:.2f}, c={c_list[-1]:.2f}")
-    
-    plot_with_slider(x, y, a_list, b_list, c_list, x_min=1, x_max=10)
+# Обновление графика
+def update(val):
+    iterations = int(iter_slider.val)
+    y_pred = gradient_descent(x, y, 1, 1, 1, ALPHA, iterations)
+    line.set_ydata(y_pred)
+    fig.canvas.draw_idle()
 
-if __name__ == "__main__":
-    main()
+iter_slider.on_changed(update)
+update(0)  # Инициализация
 
+plt.show()
